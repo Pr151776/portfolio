@@ -85,9 +85,9 @@ const About = () => {
               variants={itemVariants}
               className="relative"
             >
-              <div className="aspect-square rounded-2xl bg-gradient-to-br from-primary-500/20 to-primary-600/20 p-8 flex items-center justify-center">
+              <div className="aspect-square rounded-2xl bg-gradient-to-br from-primary-500/20 to-primary-600/20 flex items-center justify-center overflow-hidden">
                 <div className="w-full h-full rounded-2xl bg-dark-800/50 backdrop-blur-sm border border-primary-500/30 flex items-center justify-center">
-                  <span className="text-6xl text-primary-400">👨‍💻</span>
+                  <img src="/profile.jpeg" alt="Prakash profile" />
                 </div>
               </div>
             </motion.div>
