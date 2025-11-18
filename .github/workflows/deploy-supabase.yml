@@ -1,83 +1,23 @@
-# name: Deploy Supabase (migrations + functions)
-
-# on:
-#   push:
-#     branches: [ main ]
-
-# permissions:
-#   contents: read
-
-# jobs:
-#   setup:
-#     name: Setup CLI
-#     runs-on: ubuntu-latest
-#     outputs:
-#       supabase_bin: ${{ steps.install.outputs.path }}
-#     steps:
-#       - name: Checkout
-#         uses: actions/checkout@v4
-
-#       - name: Install supabase CLI
-#         id: install
-#         run: |
-#           curl -L "https://github.com/supabase/cli/releases/download/v1.87.1/supabase_1.87.1_linux_amd64.tar.gz" | tar xz -C /tmp
-#           sudo mv /tmp/supabase /usr/local/bin/supabase
-#           echo "::set-output name=path::/usr/local/bin/supabase"
-
-#   deploy:
-#     name: Deploy
-#     runs-on: ubuntu-latest
-#     needs: setup
-#     steps:
-#       - name: Checkout
-#         uses: actions/checkout@v4
-
-#       - name: Authenticate supabase CLI
-#         env:
-#           SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
-#         run: |
-#           supabase login --access-token "$SUPABASE_ACCESS_TOKEN"
-#           supabase projects list
-
-#       - name: Deploy DB migrations (push)
-#         env:
-#           SUPABASE_PROJECT_REF: ${{ secrets.SUPABASE_PROJECT_REF }}
-#           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
-#           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
-#         run: |
-#           # Push database schema changes (migrations in supabase/migrations)
-#           supabase db push --project-ref "$SUPABASE_PROJECT_REF"
-
-#       - name: Deploy functions
-#         env:
-#           SUPABASE_PROJECT_REF: ${{ secrets.SUPABASE_PROJECT_REF }}
-#           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
-#           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
-#           RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
-#           NOTIFY_EMAIL: ${{ secrets.NOTIFY_EMAIL }}
-#           RECAPTCHA_SECRET: ${{ secrets.RECAPTCHA_SECRET }}
-#         run: |
-#           # Deploy contact function
-#           supabase functions deploy contact --project-ref "$SUPABASE_PROJECT_REF" --no-verify-jwt
-#           # Deploy retry function
-#           supabase functions deploy retry_failed_emails --project-ref "$SUPABASE_PROJECT_REF" --no-verify-jwt
-
-
-name: Deploy Supabase
+name: Supabase Deploy + Retry Emails
 
 on:
   push:
     branches: [ main ]
+  schedule:
+    - cron: '*/10 * * * *'   # every 10 minutes → retry failed emails
 
 jobs:
+
   deploy:
+    name: Deploy Supabase
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
 
       - name: Install Supabase CLI
         run: |
-          curl -L "https://github.com/supabase/cli/releases/latest/download/supabase_1.158.3_linux_amd64.tar.gz" | tar xz -C /tmp
+          curl -L "https://github.com/supabase/cli/releases/latest/download/supabase_linux_amd64.tar.gz" \
+          | tar xz -C /tmp
           sudo mv /tmp/supabase /usr/local/bin/supabase
 
       - name: Login to Supabase
@@ -85,14 +25,25 @@ jobs:
           SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
         run: supabase login --access-token "$SUPABASE_ACCESS_TOKEN"
 
-      - name: Push migrations
-        env:
-          SUPABASE_PROJECT_REF: ${{ secrets.SUPABASE_PROJECT_REF }}
-        run: supabase db push --project-ref "$SUPABASE_PROJECT_REF"
-
-      - name: Deploy functions
+      - name: Deploy Edge Functions
         env:
           SUPABASE_PROJECT_REF: ${{ secrets.SUPABASE_PROJECT_REF }}
         run: |
           supabase functions deploy contact --project-ref "$SUPABASE_PROJECT_REF" --no-verify-jwt
           supabase functions deploy retry_failed_emails --project-ref "$SUPABASE_PROJECT_REF" --no-verify-jwt
+          supabase functions deploy admin_get_contacts --project-ref "$SUPABASE_PROJECT_REF" --no-verify-jwt
+          supabase functions deploy admin_update_contact --project-ref "$SUPABASE_PROJECT_REF" --no-verify-jwt
+          supabase functions deploy admin_deny_ip --project-ref "$SUPABASE_PROJECT_REF" --no-verify-jwt
+
+
+  retry_failed_emails:
+    name: Retry Failed Emails (Cron)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Invoke retry function
+        env:
+          RETRY_FUNCTION_URL: ${{ secrets.SUPABASE_FUNCTIONS_BASE_URL }}
+        run: |
+          echo "Calling retry_failed_emails..."
+          curl -X POST "${RETRY_FUNCTION_URL}/retry_failed_emails"
+          echo "Done."
